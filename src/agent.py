@@ -9,22 +9,16 @@ from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.runnables import RunnableLambda
-
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 load_dotenv()
-
 #get the Groq api key 
 groq_api_key = os.getenv("GROQ_API_KEY")
-
 #Call. the llm model 
 llm = ChatGroq(groq_api_key = groq_api_key, model_name = "llama-3.1-8b-instant")
-
 #initialize the Hugging face embeddings
 embeddings = HuggingFaceEmbeddings(model_name = "sentence-transformers/all-MiniLM-L6-v2")
 #define the webbase loader
-
-
 loader = WebBaseLoader(
     web_paths = ("https://mlu-explain.github.io/","https://mlu-explain.github.io/logistic-regression/"),
     # bs_kwargs = dict(
@@ -97,19 +91,22 @@ question_answer_chain = (
     | llm
 )
 
-# Run
-user = input("enter the query: ")
 # response = question_answer_chain.invoke(user)
 
 # print(response.content)
 
-
 ##Now We are adding the chat History
 context_system_prompt = """
-Compare the chat history with the user's latest question.
-If the question depends on the chat history, rewrite it as a standalone question.
-If not, return the question as is.
+
+You are a query rewriter for a retrieval system.
+ONLY rewrite the user's question if it clearly depends on previous chat history
+uses words like "it", "that", "this", "they", "explain more", "what about".
+If the question is already complete and standalone,
+return it EXACTLY as written.
+Do NOT mention chat history.
+Do NOT explain anything.
 Do NOT answer the question.
+Only output the rewritten or original question.
 """
 
 context_prompt = ChatPromptTemplate.from_messages(
@@ -138,57 +135,23 @@ question_answer_chain = (
 )
 chat_history = []
 
-response = question_answer_chain.invoke(
-    {
-        "input": user,
-        "chat_history": chat_history,
-    }
-)
+print("\nType 'exit' or 'quit' to end the chat.\n")
 
-print(response.content)
+while True:
+    user = input("You: ").strip()
+    if user.lower() in {"exit", "quit"}:
+        print("Goodbye")
+        break
 
-# update history
-chat_history.append(("human", user))
-chat_history.append(("ai", response.content))
+    response = question_answer_chain.invoke(
+        {
+            "input": user,
+            "chat_history": chat_history,
+        }
+    )
 
-# user = input("enter the query: ")
+    print("\nAssistant:\n", response.content, "\n")
 
-
-# context_prompt = ChatPromptTemplate.from_messages(
-#     [
-#         ("system", context_system_prompt),
-#         MessagesPlaceholder("chat_history"),
-#         ("human", "{input}"),
-#     ]
-# )
-# contextualize_question = context_prompt | llm
-
-# history_aware_retriever = (
-#     contextualize_question
-#     | RunnableLambda(lambda msg: msg.content)
-#     | retriever
-# )
-
-# #now we have toUpdate our chain to use the history of context
-# question_answer_chain = (
-#     {
-#         "context": history_aware_retriever | format_docs,
-#         "input": RunnablePassthrough(),
-#     }
-#     | prompt
-#     | llm
-# )
-# chat_history = []
-
-# response = question_answer_chain.invoke(
-#     {
-#         "input": user,
-#         "chat_history": chat_history,
-#     }
-# )
-
-# print(response.content)
-
-# # update history
-# chat_history.append(("human", user))
-# chat_history.append(("ai", response.content))
+    # update chat history
+    chat_history.append(("human", user))
+    chat_history.append(("ai", response.content))
