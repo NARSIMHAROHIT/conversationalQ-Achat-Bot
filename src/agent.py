@@ -6,10 +6,12 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnableLambda
 
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 load_dotenv()
 
 #get the Groq api key 
@@ -97,9 +99,96 @@ question_answer_chain = (
 
 # Run
 user = input("enter the query: ")
-response = question_answer_chain.invoke(user)
+# response = question_answer_chain.invoke(user)
 
-print(response.content)
+# print(response.content)
 
 
 ##Now We are adding the chat History
+context_system_prompt = """
+Compare the chat history with the user's latest question.
+If the question depends on the chat history, rewrite it as a standalone question.
+If not, return the question as is.
+Do NOT answer the question.
+"""
+
+context_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", context_system_prompt),
+        MessagesPlaceholder("chat_history"),
+        ("human", "{input}"),
+    ]
+)
+contextualize_question = context_prompt | llm
+
+history_aware_retriever = (
+    contextualize_question
+    | RunnableLambda(lambda msg: msg.content)
+    | retriever
+)
+
+#now we have toUpdate our chain to use the history of context
+question_answer_chain = (
+    {
+        "context": history_aware_retriever | format_docs,
+        "input": RunnablePassthrough(),
+    }
+    | prompt
+    | llm
+)
+chat_history = []
+
+response = question_answer_chain.invoke(
+    {
+        "input": user,
+        "chat_history": chat_history,
+    }
+)
+
+print(response.content)
+
+# update history
+chat_history.append(("human", user))
+chat_history.append(("ai", response.content))
+
+# user = input("enter the query: ")
+
+
+# context_prompt = ChatPromptTemplate.from_messages(
+#     [
+#         ("system", context_system_prompt),
+#         MessagesPlaceholder("chat_history"),
+#         ("human", "{input}"),
+#     ]
+# )
+# contextualize_question = context_prompt | llm
+
+# history_aware_retriever = (
+#     contextualize_question
+#     | RunnableLambda(lambda msg: msg.content)
+#     | retriever
+# )
+
+# #now we have toUpdate our chain to use the history of context
+# question_answer_chain = (
+#     {
+#         "context": history_aware_retriever | format_docs,
+#         "input": RunnablePassthrough(),
+#     }
+#     | prompt
+#     | llm
+# )
+# chat_history = []
+
+# response = question_answer_chain.invoke(
+#     {
+#         "input": user,
+#         "chat_history": chat_history,
+#     }
+# )
+
+# print(response.content)
+
+# # update history
+# chat_history.append(("human", user))
+# chat_history.append(("ai", response.content))
